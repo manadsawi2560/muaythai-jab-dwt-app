@@ -1,0 +1,27 @@
+{
+  "dtw_cost": 76.62647116545335,
+  "path_len": 53,
+  "impact": {
+    "coach": 20,
+    "student": 26
+  },
+  "scores": {
+    "punch": {
+      "rmse": 0.27653443813323975,
+      "score": 20.99016053336007
+    },
+    "core": {
+      "rmse": 0.7614621412233087,
+      "score": 0.0
+    },
+    "feet": {
+      "rmse": 0.5375365614891052,
+      "score": 0.0
+    },
+    "final_score": 7.136654581342424
+  },
+  "outputs": {
+    "video": "outputs\\side_by_side_analysis.mp4"
+  },
+  "errors": {}
+}

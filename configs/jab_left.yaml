@@ -1,0 +1,31 @@
+pose:
+  model_complexity: 1
+  min_detection_confidence: 0.5
+  min_tracking_confidence: 0.5
+
+segments:
+  punch: ["LEFT_WRIST","LEFT_ELBOW","LEFT_SHOULDER"]
+  core:  ["LEFT_SHOULDER","RIGHT_SHOULDER","LEFT_HIP","RIGHT_HIP"]
+  feet:  ["LEFT_HIP","RIGHT_HIP","LEFT_KNEE","RIGHT_KNEE","LEFT_ANKLE","RIGHT_ANKLE"]
+
+colors:
+  punch: [60, 220, 60]
+  core:  [60, 120, 240]
+  feet:  [220, 60, 200]
+  rest:  [180, 180, 180]
+
+scoring:
+  weights:
+    punch: 0.34
+    core:  0.33
+    feet:  0.33
+  tolerances:
+    punch: 0.35
+    core:  0.25
+    feet:  0.25
+
+render:
+  out_fps: 30
+  side_by_side: true
+  font_scale: 0.7
+  thickness: 2
