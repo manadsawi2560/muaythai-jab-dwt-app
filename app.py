@@ -10,7 +10,7 @@ import yaml
 
 from src.pipeline import run_pipeline
 from src.features import _pivot_landmarks
-from src.renderer import draw_skeleton  # reuse ฟังก์ชันวาดเส้น
+from src.renderer import draw_skeleton  # ฟังก์ชันวาดเส้น
 
 # ---------------- Page setup ----------------
 st.set_page_config(page_title="MuayThai Jab DWT (Tempo-Invariant)", layout="wide")
@@ -39,6 +39,7 @@ defaults = {
     "coach_xyz": None, "student_xyz": None,
     "path_pairs": None,
     "colors": None,
+    "dtw_idx": 0,            # index ปัจจุบันของเฟรมใน DTW path
 }
 for k, v in defaults.items():
     if k not in st.session_state:
@@ -78,12 +79,39 @@ def _reset_all():
         st.session_state[k] = defaults[k]
     st.rerun()
 
+def _draw_scores_badge(img: np.ndarray, scores: dict, origin=(10, 28)) -> None:
+    """วาดคะแนน (Final + รายส่วน) ที่มุมภาพ"""
+    if not scores:
+        return
+    fs = 0.65
+    th = 2
+    y = origin[1]
+    # พื้นหลังโปร่งบาง ๆ
+    overlay = img.copy()
+    cv2.rectangle(overlay, (5, 5), (300, 110), (255, 255, 255), -1)
+    cv2.addWeighted(overlay, 0.6, img, 0.4, 0, img)
+    # ข้อความ
+    final_s = float(scores.get("final_score", 0.0))
+    cv2.putText(img, f"Score {final_s:.1f}", (origin[0], y), cv2.FONT_HERSHEY_SIMPLEX, fs, (0, 0, 0), th)
+    y += 24
+    if "punch" in scores:
+        cv2.putText(img, f"Punch {scores['punch']['score']:.1f}", (origin[0], y), cv2.FONT_HERSHEY_SIMPLEX, fs, (40, 180, 40), th)
+        y += 22
+    if "core" in scores:
+        cv2.putText(img, f"Core  {scores['core']['score']:.1f}", (origin[0], y), cv2.FONT_HERSHEY_SIMPLEX, fs, (40, 120, 240), th)
+        y += 22
+    if "feet" in scores:
+        cv2.putText(img, f"Feet  {scores['feet']['score']:.1f}", (origin[0], y), cv2.FONT_HERSHEY_SIMPLEX, fs, (220, 60, 200), th)
+
+def _clamp(v, lo, hi):
+    return max(lo, min(hi, v))
+
 # ---------------- Uploaders ----------------
 col1, col2 = st.columns(2)
-coach_file = col1.file_uploader("โค้ช (mp4/mov/mkv)", type=["mp4","mov","mkv"], key="coach_upl")
-student_file = col2.file_uploader("ผู้เรียน (mp4/mov/mkv)", type=["mp4","mov","mkv"], key="student_upl")
+coach_file = col1.file_uploader("โค้ช (mp4/mov/mkv)", type=["mp4", "mov", "mkv"], key="coach_upl")
+student_file = col2.file_uploader("ผู้เรียน (mp4/mov/mkv)", type=["mp4", "mov", "mkv"], key="student_upl")
 
-run_col, reset_col = st.columns([1,1])
+run_col, reset_col = st.columns([1, 1])
 if reset_col.button("รีเซ็ตหน้า", type="secondary"):
     _reset_all()
 
@@ -101,9 +129,10 @@ if run_col.button("เริ่มวิเคราะห์", type="primary"):
             with st.spinner("กำลังประมวลผล..."):
                 res = run_pipeline(coach_path, student_path, str(CFG_PATH), outputs_dir=str(OUTPUTS_DIR))
             st.session_state["res"] = res
-            st.success("เสร็จแล้ว ✅")
+            st.session_state["dtw_idx"] = 0
             # รีเซ็ต viewer เพื่อเตรียมข้อมูลใหม่
             st.session_state["viewer_ready"] = False
+            st.success("เสร็จแล้ว ✅")
         except Exception as e:
             st.exception(e)
 
@@ -117,7 +146,6 @@ if res:
     video_path = res.get("outputs", {}).get("video")
     if video_path and os.path.exists(video_path):
         st.subheader("วิดีโอผลลัพธ์ (ซ้าย–ขวา)")
-        # ใช้ path ตรง ๆ; บางเบราเซอร์อาจเล่นไม่ได้ ขึ้นกับ codec
         st.video(video_path)
         with open(video_path, "rb") as vf:
             st.download_button("ดาวน์โหลดวิดีโอ", data=vf, file_name=Path(video_path).name, mime="video/mp4")
@@ -125,7 +153,7 @@ if res:
         st.info("วิดีโอเล่นไม่ได้ในเบราว์เซอร์นี้ หรือไม่มีไฟล์ — ดูด้วย Frame Viewer ด้านล่างแทน")
 
     # ---------------- Frame-by-Frame Viewer (ไม่ใช้วิดีโอ) ----------------
-    st.subheader("Frame-by-Frame Viewer (ซ้าย–ขวาพร้อม skeleton)")
+    st.subheader("Frame-by-Frame Viewer (ซ้าย–ขวาพร้อม skeleton + คะแนนบนภาพ)")
 
     # เตรียมทรัพยากรครั้งเดียวหลังได้ผลลัพธ์
     if not st.session_state["viewer_ready"]:
@@ -161,17 +189,34 @@ if res:
     path_len = len(path_pairs)
 
     if path_len > 0:
-        # ---- Controls ไป Sidebar + ปรับขนาดภาพ ----
+        # ---- Controls ที่ Sidebar ----
         st.sidebar.header("Viewer controls")
         viewer_width = st.sidebar.slider("ความกว้างภาพต่อฝั่ง (px)", 280, 960, 480, 20, key="vw")
-        idx = st.sidebar.slider("ตำแหน่งใน DTW path", 0, path_len - 1, 0, key="dtw_idx")
 
+        # ปุ่มเลื่อนเฟรมแทนสไลเดอร์
+        step = st.sidebar.radio("Step", [1, 5], horizontal=True, index=0)
+        cprev, cnext = st.sidebar.columns(2)
+        if cprev.button("◀︎ Prev"):
+            st.session_state["dtw_idx"] = _clamp(st.session_state["dtw_idx"] - step, 0, path_len - 1)
+        if cnext.button("Next ▶︎"):
+            st.session_state["dtw_idx"] = _clamp(st.session_state["dtw_idx"] + step, 0, path_len - 1)
+        cstart, cend = st.sidebar.columns(2)
+        if cstart.button("⏮️ First"):
+            st.session_state["dtw_idx"] = 0
+        if cend.button("Last ⏭️"):
+            st.session_state["dtw_idx"] = path_len - 1
+
+        # แสดง index ปัจจุบัน
+        st.sidebar.write(f"ตำแหน่งใน DTW path: **{st.session_state['dtw_idx']} / {path_len-1}**")
+
+        # ---- ดึงคู่เฟรมตาม index ปัจจุบัน ----
+        idx = st.session_state["dtw_idx"]
         iA, iB = path_pairs[idx]
 
         frA = st.session_state["framesA"].get(iA, st.session_state["blankA"]).copy()
         frB = st.session_state["framesB"].get(iB, st.session_state["blankB"]).copy()
 
-        # วาด skeleton ลงภาพ (BGR -> RGB ตอนแสดง)
+        # วาด skeleton + แปะคะแนนบนภาพ
         colors = st.session_state["colors"]
         coach_xyz = st.session_state["coach_xyz"]
         student_xyz = st.session_state["student_xyz"]
@@ -180,11 +225,16 @@ if res:
         if iB < student_xyz.shape[0]:
             frB = draw_skeleton(frB, student_xyz[iB, :, :2], colors)
 
+        # วาดคะแนน (ใช้คะแนนรวมของทั้งคลิป; ถ้าต้องการต่อเฟรม ต้องคำนวณเพิ่ม)
+        _draw_scores_badge(frA, res.get("scores", {}))
+        _draw_scores_badge(frB, res.get("scores", {}))
+
+        # แสดงสองภาพซ้าย-ขวา
         c1, c2 = st.columns(2, gap="small")
         c1.image(cv2.cvtColor(frA, cv2.COLOR_BGR2RGB), caption=f"Coach frame {iA}", width=viewer_width)
         c2.image(cv2.cvtColor(frB, cv2.COLOR_BGR2RGB), caption=f"Student frame {iB}", width=viewer_width)
 
-        st.caption("ภาพนี้ไม่ใช่วิดีโอ จึงไม่ติดปัญหา codec ของเบราว์เซอร์ — ใช้ Sidebar เลื่อนสไลเดอร์แล้วภาพจะอัปเดตทันที")
+        st.caption("กดปุ่ม Prev/Next หรือเลือก step เป็น 1/5 เพื่อเลื่อนดูเฟรมทีละขั้น — ไม่ติดปัญหา codec ของเบราว์เซอร์")
     else:
         st.info("ไม่มีข้อมูล DTW path ให้แสดง (ตรวจว่า pipeline บันทึก field 'path' แล้วหรือไม่)")
 else:
