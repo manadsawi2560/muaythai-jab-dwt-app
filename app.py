@@ -14,7 +14,7 @@ from src.renderer import draw_skeleton  # ฟังก์ชันวาดเ�
 
 # ---------------- Page setup ----------------
 st.set_page_config(page_title="MuayThai Jab DWT (Tempo-Invariant)", layout="wide")
-st.title("🥊 MuayThai Jab Analyzer (BlazePose + DTW) — Tempo-Invariant")
+st.title("MuayThai Jab Analyzer (BlazePose + DTW) — Tempo-Invariant")
 
 # ---------------- Paths ----------------
 ROOT = Path(__file__).parent
@@ -132,7 +132,7 @@ if run_col.button("เริ่มวิเคราะห์", type="primary"):
             st.session_state["dtw_idx"] = 0
             # รีเซ็ต viewer เพื่อเตรียมข้อมูลใหม่
             st.session_state["viewer_ready"] = False
-            st.success("เสร็จแล้ว ✅")
+            st.success("เสร็จแล้ว")
         except Exception as e:
             st.exception(e)
 
@@ -203,7 +203,7 @@ if res:
         cstart, cend = st.sidebar.columns(2)
         if cstart.button("⏮️ First"):
             st.session_state["dtw_idx"] = 0
-        if cend.button("Last ⏭️"):
+        if cend.button("Last ⏭"):
             st.session_state["dtw_idx"] = path_len - 1
 
         # แสดง index ปัจจุบัน

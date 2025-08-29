@@ -1,31 +1,71 @@
+# configs/jab_left.yaml
+# โปรไฟล์ท่า: Jab (หมัดซ้าย)
+
 pose:
   model_complexity: 1
   min_detection_confidence: 0.5
   min_tracking_confidence: 0.5
 
+# -------- Pre-processing (ก่อนคำนวณฟีเจอร์/DTW) --------
+# translate → rotate → scale
+preproc:
+  center: "mid_hip"            # mid_hip | nose | none
+  rotate: "shoulders_to_x"     # shoulders_to_x | none
+  scale:  "shoulder_width"     # shoulder_width | shoulder_hip_diag | none
+
+# -------- Smoothing สัญญาณ (ทุกฟีเจอร์แบบ 1D) --------
+smoothing:
+  method: "savgol"             # savgol | movavg | none
+  window: 9                    # ขนาดหน้าต่าง (เลขคี่ ≥3) สำหรับ savgol
+  polyorder: 2                 # องศาพหุนามของ savgol
+  mov_window: 5                # ขนาดหน้าต่างสำหรับ moving average (ถ้าเลือก movavg)
+
+# -------- ส่วนร่างกายที่เน้นวาดสี (ใช้กับ renderer) --------
 segments:
   punch: ["LEFT_WRIST","LEFT_ELBOW","LEFT_SHOULDER"]
   core:  ["LEFT_SHOULDER","RIGHT_SHOULDER","LEFT_HIP","RIGHT_HIP"]
   feet:  ["LEFT_HIP","RIGHT_HIP","LEFT_KNEE","RIGHT_KNEE","LEFT_ANKLE","RIGHT_ANKLE"]
 
 colors:
-  punch: [60, 220, 60]
-  core:  [60, 120, 240]
-  feet:  [220, 60, 200]
-  rest:  [180, 180, 180]
+  punch: [60, 220, 60]         # เขียว
+  core:  [60, 120, 240]        # น้ำเงิน
+  feet:  [220, 60, 200]        # ม่วงชมพู
+  rest:  [180, 180, 180]       # เทา (ถ้าอยากวาดส่วนอื่นแบบจาง)
 
+# -------- การให้คะแนน --------
 scoring:
+  # น้ำหนักรวมต้องได้ ~1.0
   weights:
     punch: 0.34
     core:  0.33
     feet:  0.33
+
+  # tolerance จะใช้เมื่อ mapping = linear (สำรองไว้)
   tolerances:
     punch: 0.35
     core:  0.25
     feet:  0.25
 
+  # เลือกวิธี map RMSE → score (0–100)
+  mapping: "logistic"          # logistic | linear
+
+  # พารามิเตอร์ logistic: แนะนำคาลิเบรตจากข้อมูลจริง
+  logistic:
+    m: 0.40                    # จุดกึ่งกลาง RMSE (score ≈ 50)
+    k: 6.0                     # ความชัน (ใหญ่ = ชันขึ้น, แยกเคสชัดขึ้น)
+
+  # พารามิเตอร์ linear (ใช้เมื่อ mapping: linear)
+  linear:
+    tol_at_zero: 0.35          # RMSE = tol → 0 คะแนน (RMSE=0 → 100)
+
+# -------- การเรนเดอร์วิดีโอผลลัพธ์ --------
 render:
   out_fps: 30
-  side_by_side: true
+  side_by_side: true           # โหมดซ้าย–ขวา (ตัว renderer จัด layout horizontal)
   font_scale: 0.7
   thickness: 2
+
+# -------- การจัดแนวด้วย DTW --------
+dtw:
+  window: null                 # ขอบเขต Sakoe-Chiba (เช่น 15) หรือ null = ไม่จำกัด
+  impact_window: 0            # ทำ DTW เฉพาะช่วง impact ±N เฟรม (0 = ทั้งคลิป)
